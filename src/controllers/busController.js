@@ -1,7 +1,7 @@
 const Bus = require('../models/Bus');
 const asyncHandler = require('../utils/asyncHandler');
 const mongoose = require('mongoose');
-
+const Route = require('../models/Route');
 // @desc    Create a bus
 // @route   POST /api/buses
 // @access  Private/Admin
@@ -43,11 +43,32 @@ const getBusById = asyncHandler(async (req, res) => {
 // @route   PUT /api/buses/:id
 // @access  Private/Admin
 const updateBus = asyncHandler(async (req, res) => {
+
+  // Security:
+  // Validate MongoDB ObjectId before querying database
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid Bus ID');
+  }
+
   const bus = await Bus.findById(req.params.id);
 
   if (bus) {
-    Object.assign(bus, req.body);
+  // Security:
+  // Update only allowed fields (Prevents Mass Assignment)
+
+  bus.name = req.body.name ?? bus.name;
+  bus.bus_number = req.body.bus_number ?? bus.bus_number;
+  bus.price = req.body.price ?? bus.price;
+  bus.bus_type = req.body.bus_type ?? bus.bus_type;
+  bus.total_seats = req.body.total_seats ?? bus.total_seats;
+  bus.amenities = req.body.amenities ?? bus.amenities;
+  bus.assigned_driver = req.body.assigned_driver ?? bus.assigned_driver;
+  bus.bus_images = req.body.bus_images ?? bus.bus_images;
+  bus.status = req.body.status ?? bus.status;
+
     const updatedBus = await bus.save();
+
     res.json(updatedBus);
   } else {
     res.status(404);
@@ -59,15 +80,39 @@ const updateBus = asyncHandler(async (req, res) => {
 // @route   DELETE /api/buses/:id
 // @access  Private/Admin
 const deleteBus = asyncHandler(async (req, res) => {
+
+  // Security:
+  // Validate MongoDB ObjectId before querying database
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid Bus ID');
+  }
   const bus = await Bus.findById(req.params.id);
 
-  if (bus) {
-    await bus.deleteOne();
-    res.json({ message: 'Bus removed' });
-  } else {
-    res.status(404);
-    throw new Error('Bus not found');
+if (bus) {
+
+  // Security:
+  // Prevent deleting a bus that is assigned to any route
+
+  const assignedRoute = await Route.findOne({
+    assigned_bus: bus._id
+  });
+
+  if (assignedRoute) {
+    res.status(400);
+    throw new Error(
+      'Cannot delete a bus that is assigned to a route'
+    );
   }
+
+  await bus.deleteOne();
+
+  res.json({ message: 'Bus removed' });
+
+} else {
+  res.status(404);
+  throw new Error('Bus not found');
+}
 });
 
 module.exports = {
