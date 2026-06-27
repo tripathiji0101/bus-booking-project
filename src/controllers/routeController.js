@@ -3,19 +3,31 @@ console.log("ROUTE CONTROLLER LOADED");
 const Bus = require('../models/Bus');
 const Seat = require('../models/Seat');
 const asyncHandler = require('../utils/asyncHandler');
-
+const mongoose = require('mongoose');
+const Booking = require('../models/Booking');
 // @desc    Create a route
 // @route   POST /api/routes
 // @access  Private/Admin
 const createRoute = asyncHandler(async (req, res) => {
-  const route = await Route.create(req.body);
 
-  const bus = await Bus.findById(route.assigned_bus);
+  // Security:
+  // Verify that the assigned bus exists before creating the route
+  const bus = await Bus.findById(req.body.assigned_bus);
 
   if (!bus) {
     res.status(404);
     throw new Error('Assigned bus not found');
   }
+
+  // Security:
+  // Only active buses can be assigned to routes
+  if (bus.status !== 'active') {
+    res.status(400);
+    throw new Error('Only active buses can be assigned to routes');
+  }
+
+  // Create route only after successful validation
+  const route = await Route.create(req.body);
 
   const seats = [];
 
@@ -30,14 +42,13 @@ const createRoute = asyncHandler(async (req, res) => {
     });
   }
 
-  await Seat.insertMany(seats);
   console.log("Bus found:", bus.bus_number);
-console.log("Total seats:", bus.total_seats);
-console.log("Seats prepared:", seats.length);
+  console.log("Total seats:", bus.total_seats);
+  console.log("Seats prepared:", seats.length);
 
-await Seat.insertMany(seats);
+  await Seat.insertMany(seats);
 
-console.log("Seats inserted successfully");
+  console.log("Seats inserted successfully");
 
   res.status(201).json(route);
 });
@@ -61,12 +72,21 @@ const getRoutes = asyncHandler(async (req, res) => {
   const routes = await Route.find(filter).populate('assigned_bus', 'bus_number bus_type total_seats amenities');
   res.json(routes);
 });
-
 // @desc    Get route by ID
 // @route   GET /api/routes/:id
 // @access  Public
 const getRouteById = asyncHandler(async (req, res) => {
-  const route = await Route.findById(req.params.id).populate('assigned_bus');
+
+  // Security:
+  // Validate MongoDB ObjectId before querying database
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid Route ID');
+  }
+
+  const route = await Route.findById(req.params.id)
+    .populate('assigned_bus');
+
   if (route) {
     res.json(route);
   } else {
@@ -74,17 +94,44 @@ const getRouteById = asyncHandler(async (req, res) => {
     throw new Error('Route not found');
   }
 });
-
 // @desc    Update a route
 // @route   PUT /api/routes/:id
 // @access  Private/Admin
 const updateRoute = asyncHandler(async (req, res) => {
+
+  // Security:
+  // Validate MongoDB ObjectId before querying database
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid Route ID');
+  }
+
   const route = await Route.findById(req.params.id);
 
   if (route) {
-    Object.assign(route, req.body);
+
+    // Security:
+    // Update only allowed fields (Prevents Mass Assignment)
+
+    route.source = req.body.source ?? route.source;
+    route.destination = req.body.destination ?? route.destination;
+    route.departure_time =
+      req.body.departure_time ?? route.departure_time;
+    route.arrival_time =
+      req.body.arrival_time ?? route.arrival_time;
+    route.distance =
+      req.body.distance ?? route.distance;
+    route.duration =
+      req.body.duration ?? route.duration;
+    route.base_price =
+      req.body.base_price ?? route.base_price;
+    route.assigned_bus =
+      req.body.assigned_bus ?? route.assigned_bus;
+
     const updatedRoute = await route.save();
+
     res.json(updatedRoute);
+
   } else {
     res.status(404);
     throw new Error('Route not found');
@@ -95,11 +142,36 @@ const updateRoute = asyncHandler(async (req, res) => {
 // @route   DELETE /api/routes/:id
 // @access  Private/Admin
 const deleteRoute = asyncHandler(async (req, res) => {
+
+  // Security:
+  // Validate MongoDB ObjectId before querying database
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid Route ID');
+  }
+
   const route = await Route.findById(req.params.id);
 
   if (route) {
+
+    // Security:
+    // Prevent deleting a route that already has bookings
+
+    const bookingExists = await Booking.exists({
+      route_id: route._id
+    });
+
+    if (bookingExists) {
+      res.status(400);
+      throw new Error(
+        'Cannot delete route with existing bookings'
+      );
+    }
+
     await route.deleteOne();
+
     res.json({ message: 'Route removed' });
+
   } else {
     res.status(404);
     throw new Error('Route not found');

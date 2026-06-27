@@ -45,6 +45,7 @@ const routeSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
+    minlength: [2, 'Duration is too short'],
     maxlength: [20, 'Duration is too long'],
   },
 
@@ -55,13 +56,17 @@ const routeSchema = new mongoose.Schema({
     required: true,
     min: [0, 'Base price cannot be negative'],
   },
-
+// Security:
+// Ensure assigned_bus contains a valid MongoDB ObjectId
   assigned_bus: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Bus',
     required: true,
-  }
-
+    validate: {
+      validator: mongoose.Types.ObjectId.isValid,
+      message: 'Invalid Bus ID'
+    }
+},
 }, {
   timestamps: {
     createdAt: 'created_at',
