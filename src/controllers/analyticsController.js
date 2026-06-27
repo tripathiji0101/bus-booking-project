@@ -13,21 +13,58 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
   const activeBuses = await Bus.countDocuments({ status: 'active' });
   const activeDrivers = await Driver.countDocuments({ status: 'active' });
 
-  // Calculate total revenue (completed payments)
-  const completedBookings = await Booking.find({ payment_status: 'completed' });
-  const totalRevenue = completedBookings.reduce((acc, booking) => acc + booking.total_amount, 0);
+// Performance:
+// Calculate total revenue directly in MongoDB
+
+const revenueResult = await Booking.aggregate([
+  {
+    $match: {
+      payment_status: 'completed'
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      totalRevenue: {
+        $sum: '$total_amount'
+      }
+    }
+  }
+]);
+
+const totalRevenue =
+  revenueResult[0]?.totalRevenue || 0;
 
   // Simplified monthly revenue
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const monthlyBookings = await Booking.find({
-    payment_status: 'completed',
-    created_at: { $gte: startOfMonth },
-  });
-  const monthlyRevenue = monthlyBookings.reduce((acc, booking) => acc + booking.total_amount, 0);
+// Performance:
+// Calculate monthly revenue inside MongoDB
 
+const monthlyRevenueResult =
+await Booking.aggregate([
+  {
+    $match: {
+      payment_status: 'completed',
+      created_at: {
+        $gte: startOfMonth
+      }
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      monthlyRevenue: {
+        $sum: '$total_amount'
+      }
+    }
+  }
+]);
+
+const monthlyRevenue =
+monthlyRevenueResult[0]?.monthlyRevenue || 0;
   res.json({
     totalRevenue,
     monthlyRevenue,
