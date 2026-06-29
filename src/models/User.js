@@ -74,7 +74,7 @@ const userSchema = new mongoose.Schema({
 
 // Performance:
 // Create indexes for faster database queries
-userSchema.index({ phone: 1 });
+
 userSchema.index({ role: 1 });
 userSchema.index({ status: 1 });
 
